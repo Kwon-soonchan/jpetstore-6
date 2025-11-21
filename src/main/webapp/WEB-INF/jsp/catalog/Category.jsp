@@ -1,6 +1,6 @@
 <%--
 
-       Copyright 2010-2022 the original author or authors.
+       Copyright 2010-2025 the original author or authors.
 
        Licensed under the Apache License, Version 2.0 (the "License");
        you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 --%>
 <%@ include file="../common/IncludeTop.jsp"%>
+<%@ taglib uri="http://java.sun.com/jsp/jstl/functions" prefix="fn"%>
 
 <div id="BackLink"><stripes:link
 	beanclass="org.mybatis.jpetstore.web.actions.CatalogActionBean">
@@ -31,19 +32,211 @@
 		<th>Name</th>
 	</tr>
 	<c:forEach var="product" items="${actionBean.productList}">
+		<c:set var="isRecommended" value="false" />
+		<c:if test="${not empty actionBean.productRecommendationMap}">
+			<c:set var="isRecommended" value="${actionBean.productRecommendationMap[product.productId]}" />
+		</c:if>
 		<tr>
-			<td><stripes:link
-				beanclass="org.mybatis.jpetstore.web.actions.CatalogActionBean"
-				event="viewProduct">
-				<stripes:param name="productId" value="${product.productId}" />
-				${product.productId}
-			</stripes:link></td>
+			<td><span class="product-link"
+				data-product-id="${product.productId}"
+				data-description="${fn:replace(product.description, '\"', '&quot;')}"
+				data-category-id="${product.categoryId}"
+				data-product-name="${product.name}"
+				data-is-recommended="${isRecommended}">
+				<stripes:link
+					beanclass="org.mybatis.jpetstore.web.actions.CatalogActionBean"
+					event="viewProduct">
+					<stripes:param name="productId" value="${product.productId}" />
+					${product.productId}
+				</stripes:link>
+			</span></td>
 			<td>${product.name}</td>
 		</tr>
 	</c:forEach>
 </table>
 
+<!-- Image Popup -->
+<div id="productImagePopup" class="product-image-popup"></div>
+
 </div>
+
+<style>
+.product-image-popup {
+	position: absolute;
+	display: none;
+	z-index: 1000;
+	background-color: white;
+	border: 2px solid #333;
+	border-radius: 5px;
+	padding: 5px;
+	box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+	pointer-events: none;
+}
+
+.product-image-popup img {
+	max-width: 300px;
+	max-height: 300px;
+	display: block;
+}
+
+.product-image-popup .recommendation-text {
+	text-align: center;
+	padding: 5px 0;
+	font-size: 12px;
+	font-weight: bold;
+	margin-top: 5px;
+}
+
+.product-image-popup .recommendation-text.recommendation-yes {
+	color: #0066cc;
+}
+
+.product-image-popup .recommendation-text.recommendation-no {
+	color: #cc0000;
+}
+
+.product-link {
+	position: relative;
+	cursor: pointer;
+}
+</style>
+
+<script>
+(function() {
+	// Extract image path from description
+	function extractImagePath(description) {
+		if (!description) {
+			console.log('Description is empty');
+			return null;
+		}
+
+		console.log('Raw description:', description);
+
+		// Try multiple patterns to find image path
+		// Pattern 1: <image src="../images/xxx.gif"> or <image src='../images/xxx.gif'>
+		var match = description.match(/<image\s+src\s*=\s*["']([^"']*\.\.\/images\/[^"']+)["']/i);
+		if (match && match[1]) {
+			var path = match[1];
+			if (path.startsWith('../images/')) {
+				return '/jpetstore/images/' + path.substring('../images/'.length);
+			}
+			return '/jpetstore/images/' + path;
+		}
+
+		// Pattern 2: <image src="../images/xxx.gif"> (without quotes)
+		match = description.match(/<image\s+src\s*=\s*\.\.\/images\/([^\s>]+)/i);
+		if (match && match[1]) {
+			return '/jpetstore/images/' + match[1];
+		}
+
+		// Pattern 3: ../images/xxx.gif (standalone)
+		match = description.match(/\.\.\/images\/([^\s"'>]+)/i);
+		if (match && match[1]) {
+			return '/jpetstore/images/' + match[1];
+		}
+
+		// Pattern 4: HTML escaped version &lt;image src=...
+		match = description.match(/&lt;image\s+src\s*=\s*["']?\.\.\/images\/([^"'>\s]+)["']?/i);
+		if (match && match[1]) {
+			return '/jpetstore/images/' + match[1];
+		}
+
+		console.log('No image path found in description');
+		return null;
+	}
+
+	// Get category-based default image
+	function getDefaultImage(categoryId) {
+		var imageMap = {
+			'FISH': '/jpetstore/images/fish1.gif',
+			'DOGS': '/jpetstore/images/dog1.gif',
+			'CATS': '/jpetstore/images/cat1.gif',
+			'BIRDS': '/jpetstore/images/bird1.gif',
+			'REPTILES': '/jpetstore/images/snake1.gif'
+		};
+		return imageMap[categoryId] || '/jpetstore/images/splash.gif';
+	}
+
+	var popup = document.getElementById('productImagePopup');
+	var productLinks = document.querySelectorAll('.product-link');
+
+	// Get pet type name from category
+	function getPetTypeName(categoryId) {
+		var typeMap = {
+			'FISH': 'fish',
+			'DOGS': 'dog',
+			'CATS': 'cat',
+			'BIRDS': 'bird',
+			'REPTILES': 'reptile'
+		};
+		return typeMap[categoryId] || 'pet';
+	}
+
+	productLinks.forEach(function(link) {
+		var description = link.getAttribute('data-description');
+		var categoryId = link.getAttribute('data-category-id');
+		var productId = link.getAttribute('data-product-id');
+		var productName = link.getAttribute('data-product-name');
+		var isRecommended = link.getAttribute('data-is-recommended') === 'true';
+
+		link.addEventListener('mouseenter', function(e) {
+			console.log('Product ID:', productId);
+			console.log('Description:', description);
+			console.log('Category ID:', categoryId);
+			console.log('Is Recommended:', isRecommended);
+
+			var imagePath = extractImagePath(description);
+			console.log('Extracted image path:', imagePath);
+
+			if (!imagePath) {
+				imagePath = getDefaultImage(categoryId);
+				console.log('Using default image:', imagePath);
+			}
+
+			if (imagePath) {
+				console.log('Final image path:', imagePath);
+
+				// Build popup content
+				var popupContent = '<img src="' + imagePath + '" alt="Product Image" onerror="console.error(\'Image load failed:\', this.src); this.src=\'/jpetstore/images/splash.gif\'" />';
+
+				// Add recommendation text
+				if (productName) {
+					var petType = getPetTypeName(categoryId);
+					if (isRecommended) {
+						popupContent += '<div class="recommendation-text recommendation-yes">We recommend this ' + petType + '</div>';
+					} else {
+						// Check if user is logged in and has survey data (data-is-recommended attribute exists)
+						var hasRecommendationData = link.hasAttribute('data-is-recommended');
+						if (hasRecommendationData) {
+							popupContent += '<div class="recommendation-text recommendation-no">We don\'t recommend this ' + petType + '</div>';
+						}
+					}
+				}
+
+				popup.innerHTML = popupContent;
+				popup.style.display = 'block';
+
+				// Position popup near mouse cursor
+				var rect = link.getBoundingClientRect();
+				popup.style.left = (rect.right + 10) + 'px';
+				popup.style.top = (rect.top + window.scrollY) + 'px';
+			}
+		});
+
+		link.addEventListener('mouseleave', function(e) {
+			popup.style.display = 'none';
+		});
+
+		link.addEventListener('mousemove', function(e) {
+			if (popup.style.display === 'block') {
+				// Update popup position to follow mouse
+				popup.style.left = (e.clientX + 10) + 'px';
+				popup.style.top = (e.clientY + 10 + window.scrollY) + 'px';
+			}
+		});
+	});
+})();
+</script>
 
 <%@ include file="../common/IncludeBottom.jsp"%>
 
